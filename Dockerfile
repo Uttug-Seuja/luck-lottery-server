@@ -1,5 +1,5 @@
-FROM openjdk:17-jdk-slim
+FROM openjdk:17-jdk-alpine
 EXPOSE 8080
-ARG JAR_FILE=/build/libs/lucklotteryserver-0.0.1-SNAPSHOT.jar
-COPY ${JAR_FILE} app.jar
-ENTRYPOINT ["java","-jar","/app.jar"]
+VOLUME /tmp
+COPY build/libs/*.jar luck-lottery-server.jar
+ENTRYPOINT ["java", "-jar", "/luck-lottery-server.jar"]

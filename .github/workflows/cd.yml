@@ -41,6 +41,17 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-gradle-
 
+      - name: Get Short SHA
+        id: short_sha
+        run: |
+          echo "::set-output name=sha_short::$(echo ${{ github.sha }} | head -c 7)"
+          echo "Short SHA: ${{ steps.short_sha.outputs.sha_short }}"
+
+      - name: Print branch & tag information
+        run: |
+          echo "Current branch: ${{ github.event.inputs.branch || github.ref }}"
+          echo "Current tag: ${{ steps.short_sha.outputs.sha_short }}"
+
       - name: Grant execute permission for gradlew
         run: chmod +x ./gradlew
         shell: bash
@@ -49,20 +60,25 @@ jobs:
         run: ./gradlew build -x test
         shell: bash
 
-      - name: Docker build & push to prod
+      - name: Docker Login and Push
+        env:
+          DOCKER_HUB_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+          DOCKER_HUB_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+          DOCKER_IMAGE_TAG: luck-lottery:${{ steps.short_sha.outputs.sha_short }}
         run: |
-          docker login -u ${{ secrets.DOCKER_USERNAME }} -p ${{ secrets.DOCKER_PASSWORD }}
-          docker build -f Dockerfile -t ${{ secrets.DOCKER_REPO }} .
-          docker push ${{ secrets.DOCKER_REPO }}
+          echo $DOCKER_HUB_PASSWORD | docker login -u $DOCKER_HUB_USERNAME --password-stdin
+          docker build -t $DOCKER_IMAGE_TAG .
+          docker tag $DOCKER_IMAGE_TAG $DOCKER_HUB_USERNAME/$DOCKER_IMAGE_TAG
+          docker push $DOCKER_HUB_USERNAME/$DOCKER_IMAGE_TAG
 
-      - name: executing remote ssh commands using password
-        uses: appleboy/ssh-action@v0.1.6
+      - name: Deploy to EC2
+        uses: appleboy/ssh-action@master
         with:
           host: ${{ secrets.HOST }}
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.KEY }}
-          port: 22
           script: |
-            sudo docker pull ${{ secrets.DOCKER_REPO }}
-            sudo docker stop server
-            sudo docker run -d --rm --name server -p 8080:8080 ${{ secrets.DOCKER_REPO }}
+            docker pull ${{ secrets.DOCKER_USERNAME }}/luck-lottery:${{ steps.short_sha.outputs.sha_short }}
+            docker tag ${{ secrets.DOCKER_USERNAME }}/luck-lottery:${{ steps.short_sha.outputs.sha_short }} test
+            docker rm -f luck-lottery || true
+            docker run -d --name luck-lottery -e TZ=Asia/Seoul -p 8080:8080 ${{ secrets.DOCKER_USERNAME }}/luck-lottery:${{ steps.short_sha.outputs.sha_short }}
